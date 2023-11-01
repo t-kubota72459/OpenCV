@@ -110,5 +110,118 @@ SAD は単純に引いたものの絶対値を足していたが、SQDIFF は引
 画像を行列と見立て、内積 (掛け算) を求めたもの。傾向が似ていれば大きくなる。
 (工業数学でやったけど覚えてる？)
 
-# 正規化相互相関 (TM)
+# 正規化相互相関 (TM_CORR_NORMED)
 上の相互相関を -1 ~ 1 の範囲に収まるようにしたもの。
+
+
+```NORMED``` は normalized (正規化) の省略形。
+
+# ラズパイ公式カメラ Ver.3 の対応
+
+ラズパイ公式カメラ Ver.3 (Camera Module 3) は OpenCV の ```cap.read()``` メソッドからは読み取れないことがわかった。
+別の方法として ```Picamera2``` というモジュールを使うと画像取得ができることがわかったので、Camera Module 3 を利用する人は、```Picamera2```
+を利用すること。
+
+## Camera Ver.2 用サンプル
+
+```python
+import cv2
+
+cap = cv2.VideoCapture(0)      # Raspberry Piカメラのキャプチャを開始
+# キャプチャが正常に開始されたかどうかを確認
+if not cap.isOpened():
+    print("カメラを開けませんでした。")
+    exit()
+
+while True:
+    # フレームを1つずつ読み込む
+    ret, frame = cap.read()
+
+    # イメージの読み取り
+    if not ret:
+        print("フレームを読み込めませんでした。")
+        break
+    cv2.imshow('Raspberry Pi Camera', frame)
+
+    # Escキーを入力されたら画面を閉じる
+    key = cv2.waitKey(1)
+    if key == 27:
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+```
+
+## Camera Ver.3 用サンプル
+
+800x600 (WVGA) だと処理が重いかもしれない。6 行目の ```size``` を 640x480(VGA), 320x240(QVGA) に設定すると処理が軽くなる。
+
+```python
+import cv2                      # OpenCV を使う
+from picamera2 import Picamera2 # Picamera2 を使う
+from libcamera import controls  # カメラの制御パラメーター
+
+camera = Picamera2()
+camera.configure(camera.create_preview_configuration(main={"format": 'XRGB8888', "size": (800, 600)}))
+
+# カメラを有効化
+camera.start()
+#カメラを連続オートフォーカスモードにする
+camera.set_controls({"AfMode": controls.AfModeEnum.Continuous})
+
+while True:
+    # イメージの読み取り
+    im = camera.capture_array()   
+    cv2.imshow("Camera", im)
+  
+    # Escキーを入力されたら画面を閉じる
+    key = cv2.waitKey(1)
+    if key == 27:
+      break
+
+# 終了処理
+camera.stop()
+cv2.destroyAllWindows()
+```
+
+# 顔認識
+
+Ver.3 カメラで顔認識をしてみよう。Ver.2 でもカメラの読み取り方法を変更すれば可能。  
+(AI を使った) 認識は顔の特徴点 (目の位置、鼻の位置、口の位置) などから顔認識をしている。
+OpenCV には **学習済みモデル** (顔の特徴を学習した状態の AI) が用意されていて、それを呼び出すことで顔認識ができる。猫の学習済みモデルもある。
+
+<img src="./images/AI.png" width="80%"/>
+
+```python
+import cv2
+
+from picamera2 import Picamera2
+
+## ~.xml は設定ファイル。環境によって OpenCV をどこにインストールしたかで変化する。
+## find /home /usr | grep frontalface と実行すると場所がわかる。
+## 以下は、先生のラズパイの状態。
+face_detector = cv2.CascadeClassifier("/home/takaya/.local/lib/python3.9/site-packages/cv2/data/haarcascade_frontalface_default.xml")
+
+picam2 = Picamera2()
+picam2.configure(picam2.create_preview_configuration(main={"format": 'XRGB8888', "size": (640, 480)}))
+
+picam2.start()
+
+while True:
+    im = picam2.capture_array()
+
+    # カラー画像からグレー画像に変換
+    grey = cv2.cvtColor(im, cv2.COLOR_BGR2GRAY)
+
+    # 顔認識
+    faces = face_detector.detectMultiScale(grey, 1.1, 5)
+
+    # 見つけた位置を緑で囲う
+    for (x, y, w, h) in faces:
+        cv2.rectangle(im, (x, y), (x + w, y + h), (0, 255, 0))
+
+    cv2.imshow("Camera", im)
+    key = cv2.waitKey(1)
+    if key == 27:
+        break
+```
